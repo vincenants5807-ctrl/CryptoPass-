@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoPass - 密码生成器 & 强度分析</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #0b0e17;
+            color: #c9d1d9;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        /* 背景动画 */
+        .bg-grid {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-image:
+                linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none; z-index: 0;
+        }
+        .glow-orb {
+            position: fixed; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0;
+            animation: orbFloat 12s ease-in-out infinite alternate;
+        }
+        @keyframes orbFloat {
+            0% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(30px, -40px) scale(1.1); }
+            100% { transform: translate(-20px, 20px) scale(0.95); }
+        }
+
+        header {
+            text-align: center;
+            padding: 40px 20px 20px;
+            position: relative; z-index: 10;
+        }
+        header h1 { font-size: 36px; font-weight: 800; margin-bottom: 6px; }
+        header h1 span { background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        header p { color: #4a5568; font-size: 15px; }
+
+        .container { max-width: 720px; margin: 0 auto; padding: 20px; position: relative; z-index: 10; }
+
+        /* 密码展示卡片 */
+        .password-card {
+            background: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(56,189,248,0.1);
+            border-radius: 20px;
+            padding: 36px;
+            margin-bottom: 24px;
+            position: relative;
+            overflow: hidden;
+        }
+        .password-card::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc, #38bdf8);
+            background-size: 300% 100%;
+            animation: shimmer 4s linear infinite;
+        }
+        @keyframes shimmer { 0% { background-position: 300% 0; } 100% { background-position: 0 0; } }
+
+        .pw-label {
+            font-size: 12px; text-transform: uppercase; letter-spacing: 2px;
+            color: #38bdf8; margin-bottom: 14px;
+        }
+        .pw-display-row { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+        .pw-text {
+            flex: 1; font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 24px; letter-spacing: 2px; color: #f0f6fc;
+            word-break: break-all; line-height: 1.5;
+            background: rgba(255,255,255,0.03);
+            padding: 16px 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.06);
+            min-height: 64px;
+            transition: 0.3s;
+        }
+        .pw-text.flash { border-color: #38bdf8; box-shadow: 0 0 20px rgba(56,189,248,0.15); }
+        .pw-actions { display: flex; flex-direction: column; gap: 8px; }
+        .pw-btn {
+            padding: 12px 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.04);
+            color: #c9d1d9;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: 0.2s;
+        }
+        .pw-btn:hover { background: rgba(56,189,248,0.1); border-color: #38bdf8; }
+        .pw-btn.primary {
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            border: none; color: white; font-weight: 600;
+        }
+        .pw-btn.primary:hover { opacity: 0.9; transform: scale(1.02); }
+
+        /* 强度指示器 */
+        .strength-section { margin-bottom: 20px; }
+        .strength-bar-bg {
+            height: 8px; background: rgba(255,255,255,0.06);
+            border-radius: 4px; overflow: hidden; margin-bottom: 8px;
+        }
+        .strength-bar {
+            height: 100%; border-radius: 4px;
+            transition: width 0.5s ease, background 0.5s;
+            width: 0%;
+        }
+        .strength-info {
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .strength-label { font-size: 14px; font-weight: 600; }
+        .strength-details { font-size: 12px; color: #4a5568; }
+
+        /* 破解时间卡片 */
+        .crack-card {
+            display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
+        }
+        .crack-item {
+            flex: 1; min-width: 140px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .crack-item .icon { font-size: 24px; margin-bottom: 6px; }
+        .crack-item .time { font-size: 18px; font-weight: 700; color: #f0f6fc; }
+        .crack-item .lbl { font-size: 11px; color: #4a5568; margin-top: 4px; }
+
+        /* 密码分析 */
+        .analysis-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 8px; margin-bottom: 16px;
+        }
+        .analysis-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 10px;
+            font-size: 13px;
+        }
+        .analysis-item .check { font-size: 16px; }
+        .check-pass { color: #34d399; }
+        .check-fail { color: #f87171; }
+        .check-warn { color: #fbbf24; }
+
+        /* 设置面板 */
+        .settings-card {
+            background: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 24px;
+        }
+        .settings-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+
+        .setting-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .setting-row:last-child { border: none; }
+        .setting-left { display: flex; flex-direction: column; gap: 2px; }
+        .setting-name { font-size: 14px; }
+        .setting-desc { font-size: 11px; color: #4a5568; }
+
+        /* 开关 */
+        .toggle {
+            position: relative; width: 44px; height: 24px;
+            background: #1e293b; border-radius: 12px;
+            cursor: pointer; transition: 0.3s;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .toggle.on { background: #38bdf8; border-color: #38bdf8; }
+        .toggle::after {
+            content: '';
+            position: absolute; top: 2px; left: 2px;
+            width: 18px; height: 18px;
+            background: white; border-radius: 50%;
+            transition: 0.3s;
+        }
+        .toggle.on::after { left: 22px; }
+
+        /* 滑块 */
+        .length-control { display: flex; align-items: center; gap: 14px; padding: 14px 0; }
+        .length-slider {
+            flex: 1; -webkit-appearance: none;
+            height: 6px; background: #1e293b;
+            border-radius: 3px; outline: none;
+        }
+        .length-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(56,189,248,0.3);
+        }
+        .length-val {
+            font-size: 24px; font-weight: 700; min-width: 40px; text-align: center;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        /* 自定义字符 */
+        .custom-input {
+            width: 100%; padding: 10px 14px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: #c9d1d9; border-radius: 10px;
+            font-family: 'Fira Code', monospace;
+            font-size: 14px; outline: none;
+            margin-top: 8px;
+        }
+        .custom-input:focus { border-color: #38bdf8; }
+        .custom-input::placeholder { color: #2a3040; }
+
+        /* 历史记录 */
+        .history-card {
+            background: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 24px;
+        }
+        .history-card h3 {
+            font-size: 18px; font-weight: 600; margin-bottom: 16px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .history-list { display: flex; flex-direction: column; gap: 8px; }
+        .history-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 16px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 10px;
+            transition: 0.2s;
+        }
+        .history-item:hover { background: rgba(255,255,255,0.04); }
+        .history-pw {
+            flex: 1;
+            font-family: 'Fira Code', monospace; font-size: 13px;
+            color: #a0a8b8; word-break: break-all;
+        }
+        .history-meta { font-size: 11px; color: #3a4050; white-space: nowrap; }
+        .history-copy {
+            background: none; border: none; color: #4a5568;
+            cursor: pointer; font-size: 14px; padding: 4px; transition: 0.2s;
+        }
+        .history-copy:hover { color: #38bdf8; }
+        .history-empty { text-align: center; color: #2a3040; padding: 20px; font-size: 14px; }
+        .clear-btn {
+            background: none; border: none; color: #4a5568;
+            cursor: pointer; font-size: 12px; transition: 0.2s;
+        }
+        .clear-btn:hover { color: #f87171; }
+
+        /* 批量生成 */
+        .batch-section {
+            background: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 24px;
+        }
+        .batch-section h3 { font-size: 18px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .batch-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+        .batch-input {
+            width: 80px; padding: 8px 12px;
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+            color: white; border-radius: 8px; font-size: 14px; text-align: center; outline: none;
+        }
+        .batch-list {
+            background: rgba(0,0,0,0.2); border-radius: 12px;
+            padding: 16px; max-height: 260px; overflow-y: auto;
+            font-family: 'Fira Code', monospace; font-size: 13px;
+            line-height: 2; color: #8892a8;
+            display: none;
+        }
+        .batch-list.show { display: block; }
+        .batch-line { display: flex; justify-content: space-between; align-items: center; }
+        .batch-line .num { color: #3a4050; min-width: 30px; }
+        .batch-line .pw { flex: 1; color: #a0a8b8; word-break: break-all; }
+
+        /* 密码输入检测 */
+        .check-section {
+            background: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 20px;
+            padding: 30px;
+        }
+        .check-section h3 { font-size: 18px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .check-input {
+            width: 100%; padding: 14px 18px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: #f0f6fc;
+            border-radius: 12px;
+            font-family: 'Fira Code', monospace;
+            font-size: 16px;
+            outline: none;
+            margin-bottom: 16px;
+        }
+        .check-input:focus { border-color: #38bdf8; }
+        .check-input::placeholder { color: #2a3040; }
+        .check-result { display: none; }
+        .check-result.show { display: block; }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 30px; left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: rgba(17,24,39,0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(56,189,248,0.2);
+            color: white;
+            padding: 12px 28px; border-radius: 14px;
+            font-size: 14px; opacity: 0;
+            transition: 0.3s; z-index: 200;
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        @media (max-width: 600px) {
+            header h1 { font-size: 26px; }
+            .pw-text { font-size: 16px; }
+            .crack-card { flex-direction: column; }
+            .pw-display-row { flex-direction: column; }
+            .pw-actions { flex-direction: row; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="glow-orb" style="width:300px;height:300px;background:rgba(56,189,248,0.06);top:10%;left:10%;"></div>
+    <div class="glow-orb" style="width:250px;height:250px;background:rgba(129,140,248,0.06);bottom:20%;right:10%;animation-delay:4s;"></div>
+
+    <header>
+        <h1>🔐 <span>CryptoPass</span></h1>
+        <p>安全密码生成器 & 强度分析工具</p>
+    </header>
+
+    <div class="container">
+        <!-- 密码展示 -->
+        <div class="password-card">
+            <div class="pw-label">🔑 生成的密码</div>
+            <div class="pw-display-row">
+                <div class="pw-text" id="pwDisplay">点击下方按钮生成密码</div>
+                <div class="pw-actions">
+                    <button class="pw-btn" onclick="copyPassword()" title="复制">📋</button>
+                    <button class="pw-btn primary" onclick="generate()" title="生成">🎲</button>
+                </div>
+            </div>
+
+            <!-- 强度条 -->
+            <div class="strength-section">
+                <div class="strength-bar-bg">
+                    <div class="strength-bar" id="strengthBar"></div>
+                </div>
+                <div class="strength-info">
+                    <span class="strength-label" id="strengthLabel" style="color:#4a5568;">等待生成...</span>
+                    <span class="strength-details" id="strengthScore"></span>
+                </div>
+            </div>
+
+            <!-- 破解时间 -->
+            <div class="crack-card" id="crackCard" style="display:none;">
+                <div class="crack-item">
+                    <div class="icon">💻</div>
+                    <div class="time" id="crackOnline">—</div>
+                    <div class="lbl">在线攻击 (1k/s)</div>
+                </div>
+                <div class="crack-item">
+                    <div class="icon">🖥️</div>
+                    <div class="time" id="crackOffline">—</div>
+                    <div class="lbl">离线攻击 (10B/s)</div>
+                </div>
+                <div class="crack-item">
+                    <div class="icon">⚡</div>
+                    <div class="time" id="crackGpu">—</div>
+                    <div class="lbl">GPU 集群 (1T/s)</div>
+                </div>
+            </div>
+
+            <!-- 分析标记 -->
+            <div class="analysis-grid" id="analysisGrid"></div>
+        </div>
+
+        <!-- 设置 -->
+        <div class="settings-card">
+            <h3>⚙️ 生成设置</h3>
+
+            <div style="padding:6px 0 14px;">
+                <div class="setting-name" style="margin-bottom:8px;">密码长度</div>
+                <div class="length-control">
+                    <span class="length-val" id="lengthVal">16</span>
+                    <input type="range" class="length-slider" id="lengthSlider" min="4" max="64" value="16" oninput="updateLength()">
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-left">
+                    <span class="setting-name">大写字母 (A-Z)</span>
+                    <span class="setting-desc">ABCDEFGHIJKLMNOPQRSTUVWXYZ</span>
+                </div>
+                <div class="toggle on" id="togUpper" onclick="toggleOption('upper')"></div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-left">
+                    <span class="setting-name">小写字母 (a-z)</span>
+                    <span class="setting-desc">abcdefghijklmnopqrstuvwxyz</span>
+                </div>
+                <div class="toggle on" id="togLower" onclick="toggleOption('lower')"></div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-left">
+                    <span class="setting-name">数字 (0-9)</span>
+                    <span class="setting-desc">0123456789</span>
+                </div>
+                <div class="toggle on" id="togNumbers" onclick="toggleOption('numbers')"></div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-left">
+                    <span class="setting-name">特殊符号</span>
+                    <span class="setting-desc">!@#$%^&*()_+-=[]{}|;:,.<>?</span>
+                </div>
+                <div class="toggle on" id="togSymbols" onclick="toggleOption('symbols')"></div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-left">
+                    <span class="setting-name">排除相似字符</span>
+                    <span class="setting-desc">排除 i l 1 L o 0 O 等容易混淆的字符</span>
+                </div>
+                <div class="toggle" id="togExclude" onclick="toggleOption('exclude')"></div>
+            </div>
+            <div class="setting-row" style="border:none; flex-direction:column; align-items:stretch;">
+                <div class="setting-left">
+                    <span class="setting-name">自定义排除字符</span>
+                    <span class="setting-desc">输入你想要排除的字符</span>
+                </div>
+                <input class="custom-input" id="excludeChars" placeholder="例如: {}[]()/" oninput="generate()">
+            </div>
+        </div>
+
+        <!-- 批量生成 -->
+        <div class="batch-section">
+            <h3>📦 批量生成</h3>
+            <div class="batch-controls">
+                <span style="font-size:14px;">生成数量:</span>
+                <input type="number" class="batch-input" id="batchCount" value="10" min="1" max="100">
+                <button class="pw-btn primary" onclick="batchGenerate()" style="padding:8px 20px;font-size:13px;">🎲 批量生成</button>
+                <button class="pw-btn" onclick="copyBatch()" style="padding:8px 16px;font-size:13px;">📋 全部复制</button>
+            </div>
+            <div class="batch-list" id="batchList"></div>
+        </div>
+
+        <!-- 密码检测 -->
+        <div class="check-section">
+            <h3>🔍 检测已有密码</h3>
+            <input class="check-input" id="checkInput" placeholder="输入你想检测的密码..." oninput="checkPassword()">
+            <div class="check-result" id="checkResult">
+                <div class="strength-section" style="margin-bottom:12px;">
+                    <div class="strength-bar-bg">
+                        <div class="strength-bar" id="checkBar"></div>
+                    </div>
+                    <div class="strength-info">
+                        <span class="strength-label" id="checkLabel"></span>
+                        <span class="strength-details" id="checkScore"></span>
+                    </div>
+                </div>
+                <div class="analysis-grid" id="checkAnalysis"></div>
+            </div>
+        </div>
+
+        <!-- 历史记录 -->
+        <div class="history-card">
+            <h3>
+                📜 生成历史
+                <button class="clear-btn" onclick="clearHistory()">🗑️ 清空</button>
+            </h3>
+            <div class="history-list" id="historyList">
+                <div class="history-empty">暂无记录</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ========== 配置 ==========
+        const CHARS = {
+            upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+            lower: 'abcdefghijklmnopqrstuvwxyz',
+            numbers: '0123456789',
+            symbols: '!@#$%^&*()_+-=[]{}|;:,.<>?~`'
+        };
+        const SIMILAR = 'il1Lo0O';
+        const COMMON_PASSWORDS = ['password','123456','12345678','qwerty','abc123','111111','admin','letmein','welcome','monkey'];
+
+        let options = {
+            length: 16,
+            upper: true,
+            lower: true,
+            numbers: true,
+            symbols: true,
+            exclude: false
+        };
+        let currentPassword = '';
+        let history = JSON.parse(localStorage.getItem('cryptopass_history') || '[]');
+        let batchPasswords = [];
+
+        // ========== 生成密码 ==========
+        function generate() {
+            let charset = '';
+            if (options.upper) charset += CHARS.upper;
+            if (options.lower) charset += CHARS.lower;
+            if (options.numbers) charset += CHARS.numbers;
+            if (options.symbols) charset += CHARS.symbols;
+
+            if (!charset) { showToast('⚠️ 请至少启用一种字符类型'); return; }
+
+            // 排除相似字符
+            if (options.exclude) {
+                charset = charset.split('').filter(c => !SIMILAR.includes(c)).join('');
+            }
+
+            // 自定义排除
+            const customExclude = document.getElementById('excludeChars').value;
+            if (customExclude) {
+                charset = charset.split('').filter(c => !customExclude.includes(c)).join('');
+            }
+
+            if (!charset) { showToast('⚠️ 排除字符后无可用字符集'); return; }
+
+            // 使用 crypto API 生成安全随机数
+            const array = new Uint32Array(options.length);
+            crypto.getRandomValues(array);
+
+            let password = '';
+
+            // 确保每种选中类型至少出现一次
+            const required = [];
+            if (options.upper) required.push(CHARS.upper);
+            if (options.lower) required.push(CHARS.lower);
+            if (options.numbers) required.push(CHARS.numbers);
+            if (options.symbols) required.push(CHARS.symbols);
+
+            // 先填充必需字符
+            const usedPositions = new Set();
+            required.forEach((charSet, i) => {
+                let filtered = charSet;
+                if (options.exclude) filtered = filtered.split('').filter(c => !SIMILAR.includes(c)).join('');
+                if (customExclude) filtered = filtered.split('').filter(c => !customExclude.includes(c)).join('');
+                if (filtered.length === 0) return;
+                const pos = i < options.length ? i : Math.floor(Math.random() * options.length);
+                usedPositions.add(pos);
+            });
+
+            // 生成完整密码
+            password = Array.from(array).map(n => charset[n % charset.length]).join('');
+
+            // 确保包含各类型
+            const pwArr = password.split('');
+            required.forEach((charSet, i) => {
+                let filtered = charSet;
+                if (options.exclude) filtered = filtered.split('').filter(c => !SIMILAR.includes(c)).join('');
+                if (customExclude) filtered = filtered.split('').filter(c => !customExclude.includes(c)).join('');
+                if (filtered.length === 0) return;
+                if (!pwArr.some(c => filtered.includes(c))) {
+                    const pos = Math.floor(Math.random() * options.length);
+                    const rnd = new Uint32Array(1);
+                    crypto.getRandomValues(rnd);
+                    pwArr[pos] = filtered[rnd[0] % filtered.length];
+                }
+            });
+            password = pwArr.join('');
+
+            currentPassword = password;
+            displayPassword(password);
+            analyzePassword(password, 'strengthBar', 'strengthLabel', 'strengthScore', 'analysisGrid', 'crackCard');
+
+            // 保存历史
+            history.unshift({ pw: password, time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString() });
+            if (history.length > 20) history.pop();
+            localStorage.setItem('cryptopass_history', JSON.stringify(history));
+            renderHistory();
+
+            // 动画效果
+            const pwEl = document.getElementById('pwDisplay');
+            pwEl.classList.add('flash');
+            setTimeout(() => pwEl.classList.remove('flash'), 600);
+        }
+
+        function displayPassword(pw) {
+            document.getElementById('pwDisplay').textContent = pw;
+        }
+
+        // ========== 密码分析引擎 ==========
+        function analyzePassword(pw, barId, labelId, scoreId, gridId, crackId) {
+            const len = pw.length;
+            const hasUpper = /[A-Z]/.test(pw);
+            const hasLower = /[a-z]/.test(pw);
+            const hasNum = /[0-9]/.test(pw);
+            const hasSym = /[^A-Za-z0-9]/.test(pw);
+            const hasRepeat = /(.)\1{2,}/.test(pw);
+            const hasSequential = /(abc|bcd|cde|def|efg|123|234|345|456|567|678|789|qwe|wer|ert|asd|sdf|dfg)/i.test(pw);
+            const isCommon = COMMON_PASSWORDS.includes(pw.toLowerCase());
+
+            // 字符集大小
+            let poolSize = 0;
+            if (hasUpper) poolSize += 26;
+            if (hasLower) poolSize += 26;
+            if (hasNum) poolSize += 10;
+            if (hasSym) poolSize += 32;
+
+            // 熵计算
+            const entropy = len * Math.log2(poolSize || 1);
+
+            // 评分
+            let score = 0;
+            score += Math.min(len * 4, 40); // 长度
+            if (hasUpper) score += 10;
+            if (hasLower) score += 10;
+            if (hasNum) score += 10;
+            if (hasSym) score += 15;
+            if (len >= 12) score += 10;
+            if (len >= 20) score += 10;
+            if (hasRepeat) score -= 15;
+            if (hasSequential) score -= 15;
+            if (isCommon) score -= 30;
+
+            // 唯一字符比率
+            const uniqueRatio = new Set(pw).size / len;
+            score += Math.floor(uniqueRatio * 15);
+            score = Math.max(0, Math.min(100, score));
+
+            // 等级
+            let level, color, text;
+            if (score < 25) { level = 'weak'; color = '#f87171'; text = '🔴 非常弱'; }
+            else if (score < 45) { level = 'fair'; color = '#fb923c'; text = '🟠 较弱'; }
+            else if (score < 65) { level = 'good'; color = '#fbbf24'; text = '🟡 一般'; }
+            else if (score < 85) { level = 'strong'; color = '#34d399'; text = '🟢 强'; }
+            else { level = 'very-strong'; color = '#38bdf8'; text = '🔵 非常强'; }
+
+            // 更新 UI
+            const bar = document.getElementById(barId);
+            bar.style.width = score + '%';
+            bar.style.background = `linear-gradient(90deg, ${color}, ${color}88)`;
+
+            document.getElementById(labelId).textContent = text;
+            document.getElementById(labelId).style.color = color;
+            document.getElementById(scoreId).textContent = `${score}/100 · 熵: ${entropy.toFixed(1)} bits`;
+
+            // 破解时间
+            if (crackId) {
+                document.getElementById(crackId).style.display = 'flex';
+                const combinations = Math.pow(poolSize || 1, len);
+                document.getElementById('crackOnline').textContent = formatCrackTime(combinations / 1000);
+                document.getElementById('crackOffline').textContent = formatCrackTime(combinations / 1e10);
+                document.getElementById('crackGpu').textContent = formatCrackTime(combinations / 1e12);
+            }
+
+            // 分析项
+            const grid = document.getElementById(gridId);
+            grid.innerHTML = [
+                { check: hasUpper, label: '大写字母' },
+                { check: hasLower, label: '小写字母' },
+                { check: hasNum, label: '数字' },
+                { check: hasSym, label: '特殊符号' },
+                { check: len >= 12, label: '≥12 位' },
+                { check: len >= 20, label: '≥20 位' },
+                { check: !hasRepeat, label: '无重复字符', warn: hasRepeat },
+                { check: !hasSequential, label: '无连续序列', warn: hasSequential },
+                { check: !isCommon, label: '非常见密码', warn: isCommon },
+                { check: uniqueRatio > 0.7, label: '高唯一性' }
+            ].map(item => `
+                <div class="analysis-item">
+                    <span class="check ${item.warn ? 'check-fail' : (item.check ? 'check-pass' : 'check-warn')}">
+                        ${item.warn ? '✗' : (item.check ? '✓' : '○')}
+                    </span>
+                    ${item.label}
+                </div>
+            `).join('');
+        }
+
+        function formatCrackTime(seconds) {
+            if (seconds < 1) return '瞬间';
+            if (seconds < 60) return Math.ceil(seconds) + ' 秒';
+            if (seconds < 3600) return Math.ceil(seconds/60) + ' 分钟';
+            if (seconds < 86400) return Math.ceil(seconds/3600) + ' 小时';
+            if (seconds < 86400*365) return Math.ceil(seconds/86400) + ' 天';
+            if (seconds < 86400*365*1000) return Math.ceil(seconds/(86400*365)) + ' 年';
+            if (seconds < 86400*365*1e6) return Math.ceil(seconds/(86400*365*1000)) + 'K 年';
+            if (seconds < 86400*365*1e9) return Math.ceil(seconds/(86400*365*1e6)) + 'M 年';
+            if (seconds < 86400*365*1e12) return Math.ceil(seconds/(86400*365*1e9)) + 'B 年';
+            return '∞';
+        }
+
+        // ========== UI 控制 ==========
+        function updateLength() {
+            options.length = parseInt(document.getElementById('lengthSlider').value);
+            document.getElementById('lengthVal').textContent = options.length;
+            generate();
+        }
+
+        function toggleOption(opt) {
+            options[opt] = !options[opt];
+            document.getElementById('tog' + opt.charAt(0).toUpperCase() + opt.slice(1)).classList.toggle('on', options[opt]);
+            generate();
+        }
+
+        function copyPassword() {
+            if (!currentPassword) { showToast('⚠️ 请先生成密码'); return; }
+            navigator.clipboard.writeText(currentPassword).then(() => showToast('✅ 密码已复制到剪贴板'));
+        }
+
+        // ========== 批量生成 ==========
+        function batchGenerate() {
+            const count = Math.min(100, Math.max(1, parseInt(document.getElementById('batchCount').value) || 10));
+            batchPasswords = [];
+            const origPw = currentPassword;
+            for (let i = 0; i < count; i++) {
+                generate();
+                batchPasswords.push(currentPassword);
+            }
+            currentPassword = origPw;
+            displayPassword(origPw);
+
+            const list = document.getElementById('batchList');
+            list.classList.add('show');
+            list.innerHTML = batchPasswords.map((pw, i) =>
+                `<div class="batch-line"><span class="num">${i+1}.</span><span class="pw">${pw}</span></div>`
+            ).join('');
+            showToast(`🎲 已生成 ${count} 个密码`);
+        }
+
+        function copyBatch() {
+            if (batchPasswords.length === 0) { showToast('⚠️ 请先批量生成'); return; }
+            navigator.clipboard.writeText(batchPasswords.join('\n')).then(() => showToast('✅ 全部密码已复制'));
+        }
+
+        // ========== 密码检测 ==========
+        function checkPassword() {
+            const pw = document.getElementById('checkInput').value;
+            const result = document.getElementById('checkResult');
+            if (!pw) { result.classList.remove('show'); return; }
+            result.classList.add('show');
+            analyzePassword(pw, 'checkBar', 'checkLabel', 'checkScore', 'checkAnalysis', null);
+        }
+
+        // ========== 历史记录 ==========
+        function renderHistory() {
+            const list = document.getElementById('historyList');
+            if (history.length === 0) {
+                list.innerHTML = '<div class="history-empty">暂无记录</div>';
+                return;
+            }
+            list.innerHTML = history.slice(0, 10).map(h => `
+                <div class="history-item">
+                    <span class="history-pw">${h.pw}</span>
+                    <span class="history-meta">${h.time}</span>
+                    <button class="history-copy" onclick="navigator.clipboard.writeText('${h.pw}').then(()=>showToast('✅ 已复制'))">📋</button>
+                </div>
+            `).join('');
+        }
+
+        function clearHistory() {
+            history = [];
+            localStorage.removeItem('cryptopass_history');
+            renderHistory();
+            showToast('🗑️ 历史已清空');
+        }
+
+        // ========== Toast ==========
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2200);
+        }
+
+        // ========== 快捷键 ==========
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (e.code === 'Space') { e.preventDefault(); generate(); }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c' && currentPassword) { copyPassword(); }
+        });
+
+        // ========== 初始化 ==========
+        renderHistory();
+        generate();
+    </script>
+</body>
+</html>
